@@ -1,0 +1,195 @@
+
+# Skip original token acquisation code, since id did not work in CS env, replaced by provided CS code.
+#------------------------------------
+
+# Specifiy the account, get the context and get the authorization token
+#-------------------------------------------------------------------------------
+
+#Connect-AzAccount
+
+
+#$subscription = ""
+
+# Comment out the following two lines if tenant ID is not needed in the CS environment
+#$tenant = ""
+#Set-AzContext -Tenant $tenant -Subscription $subscription 
+
+# Use this instead
+# Set-AzContext -Subscription $subscription 
+
+
+#$dexResourceUrl="https://management.azure.com/"
+#$context = Get-AzContext
+#$token = [Microsoft.Azure.Commands.Common.Authentication.AzureSession]::Instance.AuthenticationFactory.Authenticate($context.Account, $context.Environment, $context.Tenant.Id.ToString(), $null, [Microsoft.Azure.Commands.Common.Authentication.ShowDialog]::Never, $null, $dexResourceUrl).AccessToken
+
+# end of orginal code
+
+#------------------------------------
+# I have copied this from the CS Script provided
+
+
+$subscriptionid="8cb05413-5242-45f4-850f-fd747cb936e6"
+$env:PSModulePath = $env:PSModulePath + ";G:\Program Files\Splunk\etc\apps\AzModules\bin"
+$SubscriptionName="GCTO_GRID_DEV"
+$Authinfo=Connect-AzAccount -Identity -Subscription $SubscriptionName
+
+# Gets context, need to already be logged in
+$context = Get-AzContext
+$profile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile
+$profileClient = New-Object -TypeName Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient -ArgumentList ($profile)
+$token = $profileClient.AcquireAccessToken($context.Subscription.TenantId)
+
+#------------------------------------
+
+$authHeader = @{
+    'Content-Type'  = 'application/json'
+    'Authorization' = 'Bearer ' + $token
+}
+
+
+$apiVersion = "2021-10-01"
+
+# First Demo: 
+
+# Display which dimensions could be used for grouping and filtering
+# Note: Not relevant for current ask, but helps to understand what is possible
+# doc : https://learn.microsoft.com/en-us/rest/api/cost-management/dimensions
+#--------------------------------------------------------------------------------
+
+
+$UriDimensions = "https://management.azure.com/subscriptions/$subscription/providers/Microsoft.CostManagement/dimensions?api-version=$apiVersion"
+
+$availableDimensions = Invoke-RestMethod -Method Get -Uri $UriDimensions  -Headers $authHeader
+
+
+
+# Second Demo: 
+
+# Query the cost management API with Filters (see example below) and groupings on selected dimensions
+# Note: 
+# doc : https://learn.microsoft.com/en-us/rest/api/cost-management/query/usage?tabs=HTTP
+#--------------------------------------------------------------------------------
+
+
+#Specify the Query Details (incl. Filter and grouping attributes)
+
+# NOTE to Andrew: modify the resource groups, tag(s) and location information
+# This is not yet the full solution, just a test if it goes into the right direction
+# The grouping has to be adjusted to your needs, for example. 
+
+$body = '{
+    "type": "Usage",
+    "timeframe": "TheLastMonth",
+    "dataSet": {
+        "granularity": "Daily",
+        "aggregation": {
+               "totalCost" :  {
+                        "name" : "PreTaxCost",
+                        "function" : "Sum"
+                }
+        },
+        "sorting": [
+            {
+                "direction": "ascending",
+                "name": "UsageDate"
+            }
+        ],
+        "grouping": [
+            {
+                "type": "Dimension",
+                "name": "ResourceId"
+            },
+            {
+                "type": "Dimension",
+                "name": "ResourceLocation"
+            },
+            {
+                "type": "Dimension",
+                "name": "ResourceType"
+            },
+            {
+                "type": "Dimension",
+                "name": "ServiceName"
+            },
+            {
+                "type": "Dimension",
+                "name": "ServiceFamily"
+            }
+        ],
+        "filter": {
+      "and": [
+        {
+          "or": [
+            {
+              "dimensions": {
+                "name": "ResourceLocation",
+                "operator": "In",
+                "values": [
+                  "West Europe"
+                ]
+              }
+            },
+            {
+              "tags": {
+                "name": "Environment",
+                "operator": "In",
+                "values": [
+                  "008"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "dimensions": {
+            "name": "ResourceGroup",
+            "operator": "In",
+            "values": [
+                "rg-008-3vvc255vqm3le-azbatch",
+                "rg-008-3vvc255vqm3le-jumpbox",
+                "rg-008-3vvc255vqm3le-vnet-hub-01",
+                "rg-008-3vvc255vqm3le-vnet-spoke-01",
+                "rg-008-3vvc255vqm3le-vnet-spoke-02"
+            ]
+          }
+        }
+      ]
+    }
+    }
+}'
+
+
+
+# Call the Rest API
+
+#Setting the Scope on Subscrition Level through .../subscriptions/your-subscription-id/....
+
+$UriUsageQuery = "https://management.azure.com/subscriptions/$subscription/providers/Microsoft.CostManagement/query?api-version=$apiVersion"
+$outputRestCall = Invoke-RestMethod -Method Post -Uri $UriUsageQuery  -Headers $authHeader -Body $body
+
+# Format the Output in a more readable format and extract additional information from the resourceId string
+
+$tableOutput = $outputRestCall.properties.rows | ForEach-Object {
+    $preTaxCost, $date, $resourceId, $resourceLocation, $resourceType, $serviceName, $serviceFamily, $currency = $_
+    $resourceGroup, $providerPre, $providerType, $resource = ($resourceId -split '/')[4,6,7,8]
+     [PSCustomObject]@{
+        Date = $date
+        Resource = $resource
+        ResourceType = $resourceType
+        ResourceGroup = $resourceGroup
+        ResourceLocation = $resourceLocation
+        PreTaxCost = $preTaxCost
+        Currency = $currency
+        ServiceName = $serviceName
+        ServiceFamily = $serviceFamily
+        #ResourceId = $resourceId
+    }
+}
+
+# Output the resutls into the command line
+
+$tableOutput | Format-Table
+ 
+# Export the output into a csv file
+
+$tableOutput |Export-Csv costQueryResults.csv -NoTypeInformation
