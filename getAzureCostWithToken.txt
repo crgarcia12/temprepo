@@ -1,5 +1,5 @@
 
-# Skip original token acquisation code, since id did not work in CS env, replaced by provided CS code.
+# Skip original token acquisation code, since id did not work in env, replaced by provided code.
 #------------------------------------
 
 # Specifiy the account, get the context and get the authorization token
@@ -10,7 +10,7 @@
 
 #$subscription = ""
 
-# Comment out the following two lines if tenant ID is not needed in the CS environment
+# Comment out the following two lines if tenant ID is not needed in the environment
 #$tenant = ""
 #Set-AzContext -Tenant $tenant -Subscription $subscription 
 
@@ -25,7 +25,7 @@
 # end of orginal code
 
 #------------------------------------
-# I have copied this from the CS Script provided
+# I have copied this from the Script provided
 
 
 $subscriptionid="8cb05413-5242-45f4-850f-fd747cb936e6"
@@ -73,7 +73,7 @@ $availableDimensions = Invoke-RestMethod -Method Get -Uri $UriDimensions  -Heade
 
 #Specify the Query Details (incl. Filter and grouping attributes)
 
-# NOTE to Andrew: modify the resource groups, tag(s) and location information
+# NOTE: modify the resource groups, tag(s) and location information
 # This is not yet the full solution, just a test if it goes into the right direction
 # The grouping has to be adjusted to your needs, for example. 
 
